@@ -216,21 +216,53 @@ local function CopyLastLineName()
 	CopyText(NameFromLink(click.link, click.text))
 end
 
-local function AddMenuEntries(owner, rootDescription)
-	if type(lastChatClick) ~= "table" then return end
-	if (GetTime() - (lastChatClick.time or 0)) > 3 then return end
+-- A chat name does not use MENU_UNIT_PLAYER: the retail client routes it
+-- through the roster/chat menus. Spy (which works on Forever) registers the
+-- whole family, so we mirror that list - missing CHAT_ROSTER was exactly why
+-- no entry appeared on right-clicking a name in the chat frame.
+local MENU_TAGS = {
+	"PLAYER", "TARGET", "FOCUS", "PARTY", "RAID_PLAYER", "RAID", "FRIEND", "ENEMY_PLAYER",
+	"CHAT_ROSTER", "COMMUNITIES_GUILD_MEMBER", "COMMUNITIES_WOW_MEMBER", "GUILD",
+}
+
+-- How long a recorded chat hyperlink click stays relevant for the menu.
+local CLICK_TTL = 10
+
+local function AddMenuEntries(owner, rootDescription, contextData)
 	if type(rootDescription) ~= "table" or type(rootDescription.CreateButton) ~= "function" then return end
+
+	local click = lastChatClick
+	local now = (GetTime and GetTime()) or 0
+	local fresh = type(click) == "table" and (now - (click.time or 0)) <= CLICK_TTL
+
+	-- Fall back to the menu context when the chat hook did not record a click
+	-- (e.g. the menu was opened from a unit frame): then only the name can be
+	-- copied, but the entry is still useful.
+	local contextName
+	if not fresh and type(contextData) == "table" and type(contextData.name) == "string" and contextData.name ~= "" then
+		contextName = contextData.name
+	end
+
+	if not fresh and not contextName then return end
 
 	rootDescription:CreateDivider()
 	if type(rootDescription.CreateTitle) == "function" then
 		rootDescription:CreateTitle(L.title)
 	end
-	rootDescription:CreateButton(L.copyLine, CopyLastLine)
-	rootDescription:CreateButton(L.copyName, CopyLastLineName)
+	if fresh then
+		rootDescription:CreateButton(L.copyLine, CopyLastLine)
+		rootDescription:CreateButton(L.copyName, CopyLastLineName)
+	else
+		rootDescription:CreateButton(L.copyName, function()
+			CopyText(CleanText(contextName))
+		end)
+	end
 end
 
 if Menu and type(Menu.ModifyMenu) == "function" then
-	pcall(Menu.ModifyMenu, "MENU_UNIT_PLAYER", AddMenuEntries)
+	for _, tag in ipairs(MENU_TAGS) do
+		pcall(Menu.ModifyMenu, "MENU_UNIT_" .. tag, AddMenuEntries)
+	end
 end
 
 -- ------------------------------------------------------------- chat hooks ----
@@ -261,3 +293,25 @@ loader:SetScript("OnEvent", function(self)
 	self:UnregisterEvent("PLAYER_LOGIN")
 	HookChatFrames()
 end)
+
+-- --------------------------------------------------------------- slash cmd ---
+
+SLASH_NANOCOPY1 = "/nanocopy"
+SlashCmdList["NANOCOPY"] = function(msg)
+	local arg = type(msg) == "string" and msg:lower():match("^%s*(.-)%s*$") or ""
+	if arg == "test" then
+		CopyText("NanoCopy clipboard test")
+		return
+	end
+	Tell("Menu.ModifyMenu: " .. tostring(Menu ~= nil and type(Menu.ModifyMenu) == "function"))
+	Tell("menu tags registered: " .. tostring(#MENU_TAGS))
+	local click = lastChatClick
+	if click then
+		local frameName = click.frame and click.frame.GetName and click.frame:GetName() or "?"
+		Tell("last chat click: " .. tostring(click.link) .. " on " .. tostring(frameName) .. " (" ..
+			string.format("%.0fs ago", ((GetTime and GetTime()) or 0) - (click.time or 0)) .. ")")
+	else
+		Tell("last chat click: none (right-click a chat name once)")
+	end
+	Tell("/nanocopy test - verify the clipboard path")
+end
