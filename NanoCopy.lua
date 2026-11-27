@@ -358,12 +358,28 @@ local function HookChatFrames()
 	for i = 1, count do
 		local chatFrame = _G["ChatFrame" .. i]
 		if chatFrame and chatFrame.HookScript then
-			-- Deliberately HookScript and not SetScript: replacing the client's
-			-- hyperlink handler would drop hooks other addons installed. Because
-			-- this runs after the client's handler, lastChatClick lags one click
-			-- behind - AddMenuEntries compensates by comparing the recorded name
-			-- with the name the menu itself reports.
-			pcall(chatFrame.HookScript, chatFrame, "OnHyperlinkClick", OnHyperlinkClick)
+			local wrapped = false
+			-- Preferred: wrap the client's own handler, so the click is recorded
+			-- BEFORE the menu is built (HookScript runs after it and lags a
+			-- click behind). SetScript keeps existing HookScript hooks alive -
+			-- those live in a separate hook list and still run after the main
+			-- script; Questie hooks this very event and was checked for this.
+			-- If the client handles hyperlinks on the C side, GetScript returns
+			-- nothing and we silently fall back to the hook + name matching.
+			if chatFrame.GetScript and chatFrame.SetScript then
+				local ok, original = pcall(chatFrame.GetScript, chatFrame, "OnHyperlinkClick")
+				if ok and type(original) == "function" then
+					local applied = pcall(chatFrame.SetScript, chatFrame, "OnHyperlinkClick",
+						function(self, link, text, button)
+							OnHyperlinkClick(self, link, text, button)
+							return original(self, link, text, button)
+						end)
+					wrapped = applied
+				end
+			end
+			if not wrapped then
+				pcall(chatFrame.HookScript, chatFrame, "OnHyperlinkClick", OnHyperlinkClick)
+			end
 		end
 	end
 end
