@@ -197,14 +197,32 @@ end
 
 -- ------------------------------------------------------------------- menu ----
 
--- Set by the chat hyperlink hook right before the client opens the unit menu.
+-- Set by the chat hyperlink hook. HookScript runs AFTER the client's own
+-- hyperlink handler, so on the very first right-click this is still nil while
+-- the menu is being built - hence the contextData fallback below.
 local lastChatClick
 
-local function CopyLastLine()
-	local click = lastChatClick
-	if not click then return end
-	local line = FindLine(click.frame, click.link)
-	CopyText(CleanText(line or click.text))
+-- Last resort: the menu gives us the clicked player name, so look for the most
+-- recent chat line that contains it. This is what makes the very first
+-- right-click work.
+local function FindRecentLineByName(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local count = _G.NUM_CHAT_WINDOWS or 10
+	for wi = 1, count do
+		local chatFrame = _G["ChatFrame" .. wi]
+		if chatFrame and chatFrame.IsShown and chatFrame:IsShown()
+			and type(chatFrame.GetNumMessages) == "function" and type(chatFrame.GetMessageInfo) == "function" then
+			local total = chatFrame:GetNumMessages() or 0
+			local lowest = math.max(1, total - 300)
+			for i = total, lowest, -1 do
+				local ok, text = pcall(chatFrame.GetMessageInfo, chatFrame, i)
+				if ok and type(text) == "string" and text:find(name, 1, true) then
+					return text
+				end
+			end
+		end
+	end
+	return nil
 end
 
 -- A chat name does not use MENU_UNIT_PLAYER: the retail client routes it
@@ -221,18 +239,28 @@ local CLICK_TTL = 10
 
 -- Only the message line is offered: copying the player name is already built
 -- into the client's own unit menu.
-local function AddMenuEntries(owner, rootDescription)
+local function AddMenuEntries(owner, rootDescription, contextData)
 	if type(rootDescription) ~= "table" or type(rootDescription.CreateButton) ~= "function" then return end
 
-	local click = lastChatClick
 	local now = (GetTime and GetTime()) or 0
-	if type(click) ~= "table" or (now - (click.time or 0)) > CLICK_TTL then return end
+	local click = lastChatClick
+	local line
+
+	if type(click) == "table" and (now - (click.time or 0)) <= CLICK_TTL then
+		line = FindLine(click.frame, click.link) or click.text
+	end
+	if not line and type(contextData) == "table" and type(contextData.name) == "string" then
+		line = FindRecentLineByName(contextData.name)
+	end
+	if type(line) ~= "string" or line == "" then return end
 
 	rootDescription:CreateDivider()
 	if type(rootDescription.CreateTitle) == "function" then
 		rootDescription:CreateTitle(L.title)
 	end
-	rootDescription:CreateButton(L.copyLine, CopyLastLine)
+	rootDescription:CreateButton(L.copyLine, function()
+		CopyText(CleanText(line))
+	end)
 end
 
 if Menu and type(Menu.ModifyMenu) == "function" then
