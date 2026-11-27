@@ -161,6 +161,49 @@ local function CleanText(text)
 	return text
 end
 
+-- Keep only what the player actually said: drop the timestamp, the speaker name
+-- and the separator ("[12:34] [Name]: hi" / "[Name] whispers: hi" -> "hi").
+-- NOTE: the full-width colon "：" is a 3-byte UTF-8 character, so it must never
+-- be placed inside a Lua character class ([...]) - Lua would match its single
+-- bytes and cut the text apart. Plain finds are used instead.
+local function FirstColonEnd(text)
+	local colonEnd
+	local _, e1 = text:find(":", 1, true)
+	if e1 then colonEnd = e1 end
+	local _, e2 = text:find("：", 1, true)
+	if e2 and (not colonEnd or e2 < colonEnd) then colonEnd = e2 end
+	return colonEnd
+end
+
+local function StripSpeaker(line, speaker)
+	if type(line) ~= "string" then return "" end
+	local text = line
+	-- leading timestamp, e.g. "[12:34] " or "12:34 "
+	text = text:gsub("^%[%d?%d:%d%d%]%s*", "")
+	text = text:gsub("^%d?%d:%d%d%s*", "")
+
+	if type(speaker) == "string" and speaker ~= "" then
+		local start = text:find(speaker, 1, true)
+		if start then
+			local after = text:sub(start + #speaker)
+			-- Drop the closing bracket of "[Name]" plus any spaces.
+			after = after:gsub("^%s*%]%s*", "")
+			local colonEnd = FirstColonEnd(after)
+			if colonEnd then
+				return (after:sub(colonEnd + 1):match("^%s*(.-)%s*$"))
+			end
+			-- No colon (emotes like "[Name] chuckles"): everything after the name.
+			return (after:match("^%s*(.-)%s*$"))
+		end
+	end
+
+	-- Unknown speaker: strip a leading "[...]" block and one "name:" prefix.
+	text = text:gsub("^%[.-%]%s*", "")
+	local colonEnd = FirstColonEnd(text)
+	if colonEnd then text = text:sub(colonEnd + 1) end
+	return (text:match("^%s*(.-)%s*$"))
+end
+
 -- Find the chat line that produced the clicked link. GetMessageInfo returns the
 -- full line text first, which is what the retail client exposes per line.
 local function FindLine(chatFrame, link)
@@ -244,13 +287,15 @@ local function AddMenuEntries(owner, rootDescription, contextData)
 
 	local now = (GetTime and GetTime()) or 0
 	local click = lastChatClick
-	local line
+	local line, speaker
 
 	if type(click) == "table" and (now - (click.time or 0)) <= CLICK_TTL then
 		line = FindLine(click.frame, click.link) or click.text
+		speaker = NameFromLink(click.link, click.text)
 	end
 	if not line and type(contextData) == "table" and type(contextData.name) == "string" then
 		line = FindRecentLineByName(contextData.name)
+		speaker = contextData.name
 	end
 	if type(line) ~= "string" or line == "" then return end
 
@@ -259,7 +304,8 @@ local function AddMenuEntries(owner, rootDescription, contextData)
 		rootDescription:CreateTitle(L.title)
 	end
 	rootDescription:CreateButton(L.copyLine, function()
-		CopyText(CleanText(line))
+		-- Only the message body: no timestamp, no "[name]:", no bracket noise.
+		CopyText(StripSpeaker(CleanText(line), speaker))
 	end)
 end
 
