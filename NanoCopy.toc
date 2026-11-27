@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: |cff46bf72NanoCopy|r
+## Title-zhCN: |cff46bf72NanoCopy 聊天复制|r
+## Notes: Right-click a player name in the chat frame to copy that message line.
+## Notes-zhCN: 右键聊天窗口里的玩家名字，可直接复制该行消息内容或玩家名字。
+## Author: Addons-Forever
+## Version: 1.0.1
+## X-Category: Chat & Communication
+## X-Website: https://github.com/Addons-SoD/NanoCopy-Forever
+
+NanoCopy.lua
