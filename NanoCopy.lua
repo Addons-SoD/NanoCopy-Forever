@@ -302,15 +302,26 @@ local function AddMenuEntries(owner, rootDescription, contextData)
 
 	local now = (GetTime and GetTime()) or 0
 	local click = lastChatClick
-	local line, speaker
+	local contextName = type(contextData) == "table" and type(contextData.name) == "string"
+		and contextData.name ~= "" and contextData.name or nil
 
+	local clickName
 	if type(click) == "table" and (now - (click.time or 0)) <= CLICK_TTL then
-		line = FindLine(click.frame, click.link) or click.text
-		speaker = NameFromLink(click.link, click.text)
+		clickName = NameFromLink(click.link, click.text)
 	end
-	if not line and type(contextData) == "table" and type(contextData.name) == "string" then
-		line = FindRecentLineByName(contextData.name)
-		speaker = contextData.name
+
+	-- The menu is built before our hyperlink hook runs, so on the second and
+	-- later clicks lastChatClick is the PREVIOUS click. Only trust it when it
+	-- refers to the same player the menu is about; otherwise fall back to the
+	-- name the menu itself gives us and search the recent chat lines for it.
+	local line, speaker
+	if clickName and (not contextName or clickName == contextName) then
+		line = FindLine(click.frame, click.link) or click.text
+		speaker = clickName
+	end
+	if not line and contextName then
+		line = FindRecentLineByName(contextName)
+		speaker = contextName
 	end
 	if type(line) ~= "string" or line == "" then return end
 
@@ -347,6 +358,11 @@ local function HookChatFrames()
 	for i = 1, count do
 		local chatFrame = _G["ChatFrame" .. i]
 		if chatFrame and chatFrame.HookScript then
+			-- Deliberately HookScript and not SetScript: replacing the client's
+			-- hyperlink handler would drop hooks other addons installed. Because
+			-- this runs after the client's handler, lastChatClick lags one click
+			-- behind - AddMenuEntries compensates by comparing the recorded name
+			-- with the name the menu itself reports.
 			pcall(chatFrame.HookScript, chatFrame, "OnHyperlinkClick", OnHyperlinkClick)
 		end
 	end
