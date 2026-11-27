@@ -23,7 +23,6 @@ if LOCALE == "zhCN" then
 	L = {
 		title = "NanoCopy",
 		copyLine = "复制这一行",
-		copyName = "复制玩家名",
 		copied = "已复制到剪贴板",
 		boxHint = "已选中文本，按 Ctrl+C 复制（Esc 关闭）",
 	}
@@ -31,7 +30,6 @@ elseif LOCALE == "zhTW" then
 	L = {
 		title = "NanoCopy",
 		copyLine = "複製這一行",
-		copyName = "複製玩家名",
 		copied = "已複製到剪貼簿",
 		boxHint = "已選中文字，按 Ctrl+C 複製（Esc 關閉）",
 	}
@@ -39,7 +37,6 @@ else
 	L = {
 		title = "NanoCopy",
 		copyLine = "Copy this line",
-		copyName = "Copy player name",
 		copied = "Copied to clipboard",
 		boxHint = "Text selected - press Ctrl+C to copy (Esc to close)",
 	}
@@ -210,12 +207,6 @@ local function CopyLastLine()
 	CopyText(CleanText(line or click.text))
 end
 
-local function CopyLastLineName()
-	local click = lastChatClick
-	if not click then return end
-	CopyText(NameFromLink(click.link, click.text))
-end
-
 -- A chat name does not use MENU_UNIT_PLAYER: the retail client routes it
 -- through the roster/chat menus. Spy (which works on Forever) registers the
 -- whole family, so we mirror that list - missing CHAT_ROSTER was exactly why
@@ -228,35 +219,20 @@ local MENU_TAGS = {
 -- How long a recorded chat hyperlink click stays relevant for the menu.
 local CLICK_TTL = 10
 
-local function AddMenuEntries(owner, rootDescription, contextData)
+-- Only the message line is offered: copying the player name is already built
+-- into the client's own unit menu.
+local function AddMenuEntries(owner, rootDescription)
 	if type(rootDescription) ~= "table" or type(rootDescription.CreateButton) ~= "function" then return end
 
 	local click = lastChatClick
 	local now = (GetTime and GetTime()) or 0
-	local fresh = type(click) == "table" and (now - (click.time or 0)) <= CLICK_TTL
-
-	-- Fall back to the menu context when the chat hook did not record a click
-	-- (e.g. the menu was opened from a unit frame): then only the name can be
-	-- copied, but the entry is still useful.
-	local contextName
-	if not fresh and type(contextData) == "table" and type(contextData.name) == "string" and contextData.name ~= "" then
-		contextName = contextData.name
-	end
-
-	if not fresh and not contextName then return end
+	if type(click) ~= "table" or (now - (click.time or 0)) > CLICK_TTL then return end
 
 	rootDescription:CreateDivider()
 	if type(rootDescription.CreateTitle) == "function" then
 		rootDescription:CreateTitle(L.title)
 	end
-	if fresh then
-		rootDescription:CreateButton(L.copyLine, CopyLastLine)
-		rootDescription:CreateButton(L.copyName, CopyLastLineName)
-	else
-		rootDescription:CreateButton(L.copyName, function()
-			CopyText(CleanText(contextName))
-		end)
-	end
+	rootDescription:CreateButton(L.copyLine, CopyLastLine)
 end
 
 if Menu and type(Menu.ModifyMenu) == "function" then
