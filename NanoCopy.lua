@@ -109,6 +109,21 @@ local function EnsureCopyBox()
 		self:ClearFocus()
 		frame:Hide()
 	end)
+	-- Ctrl+C is handled by the client itself (it owns the OS clipboard); we can
+	-- only notice the key press and close the window right after it, so the copy
+	-- feels like one click + Ctrl+C instead of a dialog you have to dismiss.
+	editBox:SetScript("OnKeyDown", function(self, key)
+		if key == "C" and IsControlKeyDown and IsControlKeyDown() then
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function()
+					if frame:IsShown() then
+						frame.editBox:ClearFocus()
+						frame:Hide()
+					end
+				end)
+			end
+		end
+	end)
 	frame.editBox = editBox
 
 	local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
